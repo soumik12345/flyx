@@ -5,6 +5,8 @@ checking the required Feather files and their schemas. Table contents remain
 on disk until explicitly read by the caller.
 """
 
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 

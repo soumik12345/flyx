@@ -81,3 +81,4 @@ nav:
   - Home: index.md
   - API Reference:
     - Connectome: api_reference/connectome.md
+    - Neuron Query: api_reference/neuron_query.md
