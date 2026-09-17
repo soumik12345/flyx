@@ -3,7 +3,7 @@ name = "flyx"
 dynamic = ["version"]
 description = "Training a fruit fly to do stuff"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "flax>=0.10.7",
     "huggingface-hub>=1.10,<1.32",
@@ -18,9 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cpu = [
-    "jax>=0.6.2",
-]
+cpu = ["jax>=0.6.2"]
+cuda12 = ["jax[cuda12]>=0.8.0"]
+cuda13 = ["jax[cuda13]>=0.8.0"]
 
 [dependency-groups]
 dev = [
@@ -34,7 +34,6 @@ dev = [
     "ruff>=0.6.9",
     "textual-dev>=1.7.0",
     "openai>=1.108.2",
-    "marimo>=0.24.2",
 ]
 docs = [
     "mkdocs>=1.6.1",
@@ -80,6 +79,9 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[tool.uv]
+environments = ["python_version >= '3.11'"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
