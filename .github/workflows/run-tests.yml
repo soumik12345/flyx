@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: 📥 Checkout the repository
@@ -33,7 +33,7 @@ jobs:
           sudo apt-get install -y libegl1
 
       - name: 🚀 Install Packages
-        run: uv sync --all-groups --all-extras
+        run: uv sync --all-groups --extra cpu
 
       - name: 🧪 Run the Tests
         run: uv run pytest tests/ -v
