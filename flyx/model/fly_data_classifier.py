@@ -14,6 +14,8 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
+from flyx.model.fly_model import FlyModel
+
 
 class ClassifierOutput(NamedTuple):
     """JAX-compatible named tuple returned by a classification forward pass.
@@ -86,7 +88,7 @@ class FlyDataClassifier(nnx.Module):
 
     def __init__(
         self,
-        core: nnx.Module,
+        core: FlyModel,
         *,
         num_features: int,
         num_classes: int,
