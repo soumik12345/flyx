@@ -58,6 +58,9 @@ markdown_extensions:
 plugins:
   - search
   - panzoom
+  - mkdocs-jupyter:
+      execute: false
+      include_requirejs: true
   - mkdocstrings:
       handlers:
         python:
@@ -86,3 +89,5 @@ nav:
     - Model:
       - Fly Model: api_reference/fly_model.md
       - Fly Data Classifier: api_reference/fly_data_classifier.md
+  - Examples:
+    - FlyDataClassifier: examples/train_fly_data_classifier.ipynb
