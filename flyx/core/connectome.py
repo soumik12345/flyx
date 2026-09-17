@@ -9,8 +9,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
+
+if TYPE_CHECKING:
+    from flyx.core.circuit import Circuit, CircuitSpec
 
 
 def _validate_schema(
@@ -88,6 +92,26 @@ class Connectome:
     annotations_path: str
     neurotransmitters_path: str
     connections_path: str
+
+    def select(self, spec: CircuitSpec) -> Circuit:
+        """Resolve a circuit specification into a reusable anatomical graph.
+
+        Args:
+            spec: Neuron and port queries, plus
+                an explicit graph-selection policy.
+
+        Returns:
+            Selected graph with original body IDs,
+                local indices, recorded counts, and selection provenance.
+
+        Raises:
+            ValueError: Selection is empty or the retained data is invalid.
+            KeyError: A query references an absent annotation column.
+            TypeError: The specification has the wrong type.
+        """
+        from flyx.core.circuit import Circuit
+
+        return Circuit.from_connectome(self, spec)
 
     @classmethod
     def from_directory(cls, directory: str | os.PathLike[str]) -> "Connectome":

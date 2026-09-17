@@ -12,12 +12,17 @@ These dynamics are a modeling choice, not a simulation of biological spikes
 or a pretrained task model.
 """
 
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
+
+from flyx.core.circuit import Circuit, CircuitSpec
+from flyx.core.connectome import Connectome
 
 
 def _indices(values, *, name, size, nonempty=False):
@@ -55,6 +60,24 @@ def _indices(values, *, name, size, nonempty=False):
             raise ValueError(f"{name} must contain indices in [0, {size})")
 
     return values.astype(np.int32)
+
+
+def _sign_policy(policy: Mapping[str, int]) -> dict[str, int]:
+    """Copy an explicit transmitter-sign mapping after validating its entries."""
+    if not isinstance(policy, Mapping):
+        raise TypeError("sign_policy must be a mapping of transmitter labels to signs")
+    result = {}
+    for label, sign in policy.items():
+        if not isinstance(label, str) or not label:
+            raise ValueError("sign_policy labels must be nonempty strings")
+        if (
+            isinstance(sign, (bool, np.bool_))
+            or not np.isscalar(sign)
+            or sign not in (-1, 1)
+        ):
+            raise ValueError("sign_policy values must be -1 or +1")
+        result[label] = int(sign)
+    return result
 
 
 @dataclass(frozen=True)
@@ -146,6 +169,11 @@ class FlyModel(nnx.Module):
 
     Attributes:
         config (FlyConfig): Recurrent dynamics configuration.
+        circuit (Circuit | None): Resolved anatomical graph for factory-built
+            models; `None` for models constructed directly from arrays. Kept
+            as host metadata, including original int64 biological IDs.
+        sign_policy (tuple): Sorted label/sign pairs copied by factory methods.
+            Empty for models constructed directly from arrays.
         num_neurons (int): Number of locally indexed neurons, `N`.
         num_inputs (int): Number of input neurons, `S`.
         num_outputs (int): Number of readout neurons, `R`, rather than the
@@ -297,6 +325,8 @@ class FlyModel(nnx.Module):
         base = signs * counts / incoming[dst]
 
         self.config = config
+        self.circuit = None
+        self.sign_policy = ()
         self.num_neurons = n
         self.num_inputs = len(inputs)
         self.num_outputs = len(outputs)
@@ -309,6 +339,100 @@ class FlyModel(nnx.Module):
 
         self.gain_logits = nnx.Param(jnp.zeros(n, dtype=jnp.float32))
         self.bias = nnx.Param(jnp.zeros(n, dtype=jnp.float32))
+
+    @classmethod
+    def from_directory(
+        cls,
+        directory: str | os.PathLike[str],
+        *,
+        circuit: CircuitSpec,
+        sign_policy: Mapping[str, int],
+        config: FlyConfig = FlyConfig(),
+    ) -> "FlyModel":
+        """Initialize a new model from a directory of anatomical data.
+
+        Args:
+            directory: MaleCNS directory accepted by `Connectome.from_directory`.
+            circuit: Explicit neuron/port queries and graph-selection policy.
+                Queries can reference `consensus_nt` after the annotation join.
+            sign_policy: Mapping from consensus neurotransmitter labels to
+                `-1` or `+1`. Every selected neuron must have a mapped label;
+                missing or unmapped labels raise rather than silently dropping
+                neurons or assigning a default sign.
+            config: Recurrent update configuration.
+
+        Returns:
+            A fresh model with zero gain logits and biases. The resolved graph
+            is available as `model.circuit` for inspection and reuse.
+
+        Raises:
+            FileNotFoundError: A required dataset file is missing.
+            NotADirectoryError: The dataset directory does not exist.
+            KeyError: A query references an absent annotation column.
+            ValueError: Data, selections, or the sign policy are invalid.
+            TypeError: The specification or sign policy has the wrong type.
+
+        Note:
+            This loads anatomical data, not a trained checkpoint. Edge scanning
+            is batched; retained edges and annotation tables occupy host memory.
+            For repeated runs, use `from_circuit` to reuse the resolved graph.
+        """
+        policy = _sign_policy(sign_policy)
+        resolved = Connectome.from_directory(directory).select(circuit)
+        return cls.from_circuit(resolved, sign_policy=policy, config=config)
+
+    @classmethod
+    def from_circuit(
+        cls,
+        circuit: Circuit,
+        *,
+        sign_policy: Mapping[str, int],
+        config: FlyConfig = FlyConfig(),
+    ) -> "FlyModel":
+        """Initialize independent learned parameters on a resolved graph.
+
+        Args:
+            circuit: Graph produced by `Connectome.select`. It is retained by
+                reference as static host metadata; model parameters are fresh.
+            sign_policy: Explicit consensus-label signs. Signs are assigned
+                by the source neuron of each retained edge. Every selected
+                neuron, including readout-only neurons, needs a mapped label.
+            config: Recurrent update configuration.
+
+        Returns:
+            A model with graph buffers, fresh parameters, and the source circuit.
+
+        Raises:
+            TypeError: `circuit` is not a `Circuit` or the policy is not a mapping.
+            ValueError: Policy entries, transmitter labels, or graph arrays
+                are invalid.
+        """
+        if not isinstance(circuit, Circuit):
+            raise TypeError("circuit must be a resolved Circuit")
+        policy = _sign_policy(sign_policy)
+        if len(circuit.neurotransmitters) != circuit.num_neurons:
+            raise ValueError("Circuit must have one transmitter label per neuron")
+        missing: set[str | None] = set()
+        neuron_signs: list[int] = []
+        for label in circuit.neurotransmitters:
+            if label is None or label not in policy:
+                missing.add(label)
+            else:
+                neuron_signs.append(policy[label])
+        if missing:
+            labels = ", ".join(sorted(repr(label) for label in missing))
+            raise ValueError(
+                f"sign_policy has no mapping for selected labels: {labels}"
+            )
+        signs = np.asarray(neuron_signs)
+        model = cls(
+            **circuit.to_arrays(),
+            edge_signs=signs[circuit.source_indices],
+            config=config,
+        )
+        model.circuit = circuit
+        model.sign_policy = tuple(sorted(policy.items()))
+        return model
 
     def __call__(self, drive: jax.Array) -> jax.Array:
         """Return final readout activity for independent batch examples.
