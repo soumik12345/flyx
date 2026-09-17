@@ -1,3 +1,4 @@
+import io
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +11,7 @@ import pyarrow.feather as feather
 import pytest
 from flax import nnx
 
+import flyx.model.fly_model as fly_model_module
 from flyx.core import Circuit, CircuitSpec, Connectome, NeuronQuery as Q
 from flyx.model import FlyConfig, FlyModel
 
@@ -141,6 +143,58 @@ def test_directory_and_circuit_factories_agree_and_apply_presynaptic_signs(
     np.testing.assert_array_equal(reused.gain_logits[...], 0.0)
     grads = nnx.grad(lambda m: jnp.sum(m(drive)))(reused)
     assert np.any(np.asarray(grads.gain_logits[...]) != 0)
+
+
+@pytest.mark.parametrize("identifier", ["malecsn-1.0", "malecns-1.0"])
+def test_named_dataset_identifier_uses_cached_download(
+    dataset_dir, spec, monkeypatch, identifier
+):
+    calls = []
+
+    def download():
+        calls.append(identifier)
+        return dataset_dir
+
+    monkeypatch.setattr(fly_model_module, "_download_malecns_v1", download)
+
+    core = FlyModel.from_directory(identifier, circuit=spec, sign_policy=POLICY)
+
+    assert calls == [identifier]
+    assert resolved_circuit(core).directory == str(dataset_dir.resolve())
+
+
+def test_malecns_download_populates_and_reuses_huggingface_cache(tmp_path, monkeypatch):
+    cache_directory = tmp_path / "male-cns-v1.0"
+    cache_directory.mkdir()
+    requested = []
+    payloads = {
+        f"{fly_model_module._MALECNS_V1_BASE_URL}/{filename}": filename.encode()
+        for filename in fly_model_module._MALECNS_V1_FILES
+    }
+
+    class Response(io.BytesIO):
+        def __init__(self, payload):
+            super().__init__(payload)
+            self.headers = {"Content-Length": str(len(payload))}
+
+    def open_url(request, timeout):
+        assert timeout == 60
+        requested.append(request.full_url)
+        return Response(payloads[request.full_url])
+
+    monkeypatch.setattr(
+        fly_model_module, "cached_assets_path", lambda **kwargs: cache_directory
+    )
+    monkeypatch.setattr(fly_model_module.urllib.request, "urlopen", open_url)
+
+    first = fly_model_module._download_malecns_v1()
+    second = fly_model_module._download_malecns_v1()
+
+    assert first == second == cache_directory
+    assert requested == list(payloads)
+    for filename in fly_model_module._MALECNS_V1_FILES:
+        assert (cache_directory / filename).read_bytes() == filename.encode()
+    assert not list(cache_directory.glob("*.incomplete"))
 
 
 def test_ranked_selection_breaks_ties_by_id_and_keeps_reverse_edges(dataset_dir, spec):

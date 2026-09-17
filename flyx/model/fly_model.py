@@ -13,16 +13,79 @@ or a pretrained task model.
 """
 
 import os
+import tempfile
+import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
+from huggingface_hub import cached_assets_path
+from huggingface_hub.utils import tqdm
 
 from flyx.core.circuit import Circuit, CircuitSpec
 from flyx.core.connectome import Connectome
+
+_MALECNS_V1_IDENTIFIERS = frozenset({"malecsn-1.0", "malecns-1.0"})
+_MALECNS_V1_BASE_URL = (
+    "https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome"
+)
+_MALECNS_V1_FILES = (
+    "body-annotations-male-cns-v1.0-minconf-0.5.feather",
+    "body-neurotransmitters-male-cns-v1.0.feather",
+    "connectome-weights-male-cns-v1.0-minconf-0.5.feather",
+)
+
+
+def _download_file(url: str, destination: Path) -> None:
+    """Download one file to its final cache path using an atomic rename."""
+    request = urllib.request.Request(url, headers={"User-Agent": "flyx"})
+    temporary_path: Path | None = None
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            content_length = response.headers.get("Content-Length")
+            total = int(content_length) if content_length is not None else None
+            with tempfile.NamedTemporaryFile(
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".incomplete",
+                delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                with tqdm(
+                    total=total,
+                    desc=f"Downloading {destination.name}",
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                ) as progress:
+                    while chunk := response.read(8 * 1024 * 1024):
+                        temporary.write(chunk)
+                        progress.update(len(chunk))
+        if temporary_path is None:
+            raise RuntimeError("Download did not create a temporary file")
+        os.replace(temporary_path, destination)
+    except BaseException:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def _download_malecns_v1() -> Path:
+    """Return a cached directory containing the required MaleCNS v1.0 files."""
+    cache_directory = cached_assets_path(
+        library_name="flyx",
+        namespace="datasets",
+        subfolder="male-cns-v1.0",
+    )
+    for filename in _MALECNS_V1_FILES:
+        destination = cache_directory / filename
+        if not destination.is_file():
+            _download_file(f"{_MALECNS_V1_BASE_URL}/{filename}", destination)
+    return cache_directory
 
 
 def _indices(values, *, name, size, nonempty=False):
@@ -353,6 +416,10 @@ class FlyModel(nnx.Module):
 
         Args:
             directory: MaleCNS directory accepted by `Connectome.from_directory`.
+                Passing the string `"malecsn-1.0"` downloads the three required
+                MaleCNS v1.0 files into the Hugging Face assets cache and reuses
+                them on later calls. `"malecns-1.0"` is accepted as a corrected
+                spelling of the same identifier.
             circuit: Explicit neuron/port queries and graph-selection policy.
                 Queries can reference `consensus_nt` after the annotation join.
             sign_policy: Mapping from consensus neurotransmitter labels to
@@ -371,6 +438,7 @@ class FlyModel(nnx.Module):
             KeyError: A query references an absent annotation column.
             ValueError: Data, selections, or the sign policy are invalid.
             TypeError: The specification or sign policy has the wrong type.
+            OSError: A requested dataset cannot be downloaded or cached.
 
         Note:
             This loads anatomical data, not a trained checkpoint. Edge scanning
@@ -378,6 +446,8 @@ class FlyModel(nnx.Module):
             For repeated runs, use `from_circuit` to reuse the resolved graph.
         """
         policy = _sign_policy(sign_policy)
+        if isinstance(directory, str) and directory in _MALECNS_V1_IDENTIFIERS:
+            directory = _download_malecns_v1()
         resolved = Connectome.from_directory(directory).select(circuit)
         return cls.from_circuit(resolved, sign_policy=policy, config=config)
 

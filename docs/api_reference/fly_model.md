@@ -43,6 +43,22 @@ fresh_core = FlyModel.from_circuit(
 )
 ```
 
+To download and cache the three required MaleCNS v1.0 files automatically,
+replace the local path with the dataset identifier:
+
+```python
+core = FlyModel.from_directory(
+    "malecsn-1.0",
+    circuit=spec,
+    sign_policy={"acetylcholine": 1},
+)
+```
+
+Downloads come from the official Janelia release and are stored in the Hugging
+Face assets cache. Later calls reuse complete cached files. The corrected alias
+`"malecns-1.0"` is also accepted, and `HF_ASSETS_CACHE` can override the cache
+location.
+
 `from_directory` initializes fresh parameters; it does not load a trained
 checkpoint. The explicit sign mapping is an experiment assumption. Every selected
 neuron must have a mapped transmitter label, including readout-only neurons.
