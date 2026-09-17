@@ -1,3 +1,3 @@
 # Neuron Query
 
-::: flyx.neuron_query
+::: flyx.core.neuron_query

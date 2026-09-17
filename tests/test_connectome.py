@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.feather as feather
 import pytest
 
-from flyx import Connectome
+from flyx.core import Connectome
 
 FILES = {
     "annotations": "body-annotations-male-cns-v1.0-minconf-0.5.feather",

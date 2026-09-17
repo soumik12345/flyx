@@ -12,6 +12,7 @@ dependencies = [
     "orbax>=0.1.9",
     "pandas>=2.3.3",
     "pyarrow>=25.0.1",
+    "scikit-learn>=1.7.2",
     "trackio>=0.35.0",
 ]
 

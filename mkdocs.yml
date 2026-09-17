@@ -80,5 +80,9 @@ plugins:
 nav:
   - Home: index.md
   - API Reference:
-    - Connectome: api_reference/connectome.md
-    - Neuron Query: api_reference/neuron_query.md
+    - Core:
+      - Connectome: api_reference/connectome.md
+      - Neuron Query: api_reference/neuron_query.md
+    - Model:
+      - Fly Model: api_reference/fly_model.md
+      - Fly Data Classifier: api_reference/fly_data_classifier.md

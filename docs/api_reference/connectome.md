@@ -1,3 +1,3 @@
 # Connectome
 
-::: flyx.connectome
+::: flyx.core.connectome
