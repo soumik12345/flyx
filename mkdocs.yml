@@ -87,5 +87,7 @@ nav:
     - Model:
       - Fly Model: api_reference/fly_model.md
       - Fly Data Classifier: api_reference/fly_data_classifier.md
+      - Fly Image Classifier: api_reference/fly_image_classifier.md
   - Examples:
     - FlyDataClassifier: examples/train_fly_data_classifier.ipynb
+    - FlyImageClassifier: examples/train_fly_image_classifier.ipynb
